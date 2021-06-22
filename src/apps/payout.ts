@@ -1,6 +1,8 @@
-/* eslint-disable max-lines-per-function -- This file is intended to be a
-script or an 'app', so we moved all of the logging to here, which makes this
-function long, but not particularly complex. */
+/**
+ * ###### NOTICE ######
+ * This file has been modified from its original version to meet the requirements of mg.social
+ */
+
 // XRP payout script
 import fs from 'fs';
 import { ZodError } from 'zod';

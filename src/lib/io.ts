@@ -1,3 +1,8 @@
+/**
+ * ###### NOTICE ######
+ * This file has been modified from its original version to meet the requirements of mg.social
+ */
+
 // I/O logic - user prompts, validation, read/write CSV
 import fs from 'fs'
 

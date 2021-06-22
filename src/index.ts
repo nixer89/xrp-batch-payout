@@ -1,3 +1,8 @@
+/**
+ * ###### NOTICE ######
+ * This file has been modified from its original version to meet the requirements of mg.social
+ */
+
 //run as nodejs
 import payout from './apps/payout';
 import * as config from './lib/config';

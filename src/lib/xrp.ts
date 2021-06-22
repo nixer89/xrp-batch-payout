@@ -1,7 +1,8 @@
-/* eslint-disable import/max-dependencies -- We are 1 over here, and a refactor doesn't make sense. */
-/* eslint-disable max-statements -- Triggered by log statements, so we ignore this. */
-/* eslint-disable max-lines-per-function -- Triggered by log statements, so we ignore this. */
-/* eslint-disable no-await-in-loop -- We want sequential execution when submitting the XRP payments in reliableBatchPayment. */
+/**
+ * ###### NOTICE ######
+ * This file has been modified from its original version to meet the requirements of mg.social
+ */
+
 // XRP logic - connect to XRPL and reliably send a payment
 import fs from 'fs'
 

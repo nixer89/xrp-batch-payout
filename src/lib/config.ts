@@ -1,3 +1,8 @@
+/**
+ * ###### NOTICE ######
+ * This file has been modified from its original version to meet the requirements of mg.social
+ */
+
 // Application configuration - defaults are recommended
 import { XrplNetwork } from 'xpring-js'
 
