@@ -6,6 +6,7 @@ import * as chokidar from 'chokidar'
 function watchInputFile() {
     let watcher = chokidar.watch(config.INPUT_CSV_FILE);
 
+    console.log("watching for file changes on " + config.INPUT_CSV_FILE);
     watcher.on('change', () => {
         payout();
     })
