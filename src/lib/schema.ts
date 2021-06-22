@@ -49,15 +49,14 @@ export const txInputSchema = z.object({
       message: '`address` must be a valid XRPL classic address.',
     }),
   destinationTag: z.union([z.number().nonnegative().int(), z.null()]),
-  usdAmount: z.number().positive(),
+  mgsAmount: z.number().positive(),
   name: z.string().nonempty(),
 })
 export type TxInput = z.infer<typeof txInputSchema>
 
 // Object schema for the receiver outputs (rows in the output CSV)
 export const txOutputSchema = txInputSchema.extend({
-  transactionHash: z.string().nonempty(),
-  usdToXrpRate: z.number().positive(),
+  transactionHash: z.string().nonempty()
 })
 export type TxOutput = z.infer<typeof txOutputSchema>
 
@@ -80,7 +79,6 @@ export const senderInputSchema = z.object({
   network: z.nativeEnum(XrplNetwork),
   grpcUrl: z.string().url(),
   maxFee: z.number().positive(),
-  usdToXrpRate: z.number().positive(),
   secret: z.string().nonempty(),
   confirmed: z.boolean(),
 })

@@ -2,7 +2,6 @@
 import fs from 'fs'
 
 import { parse, unparse, ParseResult } from 'papaparse'
-import prompts from 'prompts'
 import * as z from 'zod'
 
 import { validateObjects } from './schema'
@@ -57,40 +56,6 @@ export async function parseFromCsvToArray<T>(
 
   // Validate parsed output against schema
   return validateObjects(result.data, schema)
-}
-
-/**
- * Prompt the user with a set of questions on the command-line, validate the
- * user inputs against a schema, and return the answers.
- *
- * @param questions - Array of questions of the format accepted by `prompts`.
- * @param schema - The answer schema to validate user answers.
- * @param preAnswers - Pre-determined answers to override questions.
- *
- * @returns Object containing user-inputted answers to questions.
- * @throws Error if answers cannot be parsed against the schema.
- */
-export async function parseFromPromptToObject<
-  T extends Record<string, unknown>
->(
-  questions: prompts.PromptObject[],
-  schema: z.Schema<T>,
-  preAnswers?: unknown,
-): Promise<T> {
-  // If the user supplies pre-answers, parse them against a schema to
-  // check for valid inputs and override to avoid prompt questions
-  if (preAnswers && typeof preAnswers === 'object') {
-    prompts.override(preAnswers)
-  }
-  // If user answers prompt questions, parse them against a schema
-  // to check for valid inputs
-  const answers = schema.parse(await prompts(questions))
-  const trimmedAnswers = Object.fromEntries(
-    Object.entries(answers).map((val) => trimAndNull(val) as never),
-  )
-  // We can cast here because we know that the trim function
-  // doesn't change any types
-  return trimmedAnswers as T
 }
 
 /**

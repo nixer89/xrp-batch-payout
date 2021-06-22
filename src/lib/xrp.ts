@@ -13,7 +13,7 @@ import {
   Wallet,
   TransactionStatus,
 } from 'xpring-js'
-import { XrpErrorType } from 'xpring-js/build/XRP'
+import { IssuedCurrencyClient, XrpErrorType } from 'xpring-js/build/XRP'
 import * as z from 'zod'
 
 import { retryLimit } from './config'
@@ -65,6 +65,37 @@ export async function connectToLedger(
   return [xrpClient, balance]
 }
 
+export async function connectToLedgerToken(
+  grpcUrl: string,
+  network: XrplNetwork,
+  classicAddress: string,
+): Promise<IssuedCurrencyClient> {
+  let issuedClient: IssuedCurrencyClient
+  try {
+    // `true` uses the web gRPC endpoint, which is currently more reliable
+    issuedClient = IssuedCurrencyClient.issuedCurrencyClientWithEndpoint(grpcUrl, "", (data) => {console.log(JSON.stringify(data))}, network);
+    // Get balance in XRP - network call validates that we are connected to the ledger
+    let trustlines = await issuedClient.getTrustLines(classicAddress);
+    console.log("trustline length: " + trustlines != null ? trustlines.length : -1);
+
+  } catch (err) {
+    // Rethrow xpring-js errors in favor of something more helpful
+    if (err.errorType === XrpErrorType.XAddressRequired) {
+      throw Error(
+        `Invalid classic address. Could not connect to XRPL ${network}.`,
+      )
+    } else if (err.message === 'Http response at 400 or 500 level' || err.message === 'Unknown Content-type received.') {
+      throw Error(
+        `Failed to connect ${grpcUrl}. Is the the right ${network} endpoint?`,
+      )
+    } else {
+      throw err
+    }
+  }
+
+  return issuedClient;
+}
+
 /**
  * Generate a seed wallet from an XRPL secret.
  *
@@ -105,39 +136,33 @@ export function generateWallet(
  * @param senderWallet - Sender's XRP wallet.
  * @param xrpClient - XRPL network client.
  * @param receiverAccount - Receiver account object.
- * @param usdToXrpRate - USD to XRP exchange rate.
  *
  * @returns Tx hash if payment was submitted.
  * @throws If the transaction fails.
  */
 export async function submitPayment(
   senderWallet: Wallet,
-  xrpClient: XrpClient,
+  issuedCurrencyClient: IssuedCurrencyClient,
   receiverAccount: TxInput,
-  usdToXrpRate: number,
 ): Promise<string> {
   // Set up payment
   const {
     address: destinationClassicAddress,
-    destinationTag,
-    usdAmount,
+    mgsAmount,
   } = receiverAccount
+
   const destinationXAddress = XrpUtils.encodeXAddress(
     destinationClassicAddress,
-    destinationTag ?? undefined,
+    undefined,
   ) as string
-  const xrpPrecision = 6
-  const xrpDestinationAmount = (usdAmount / usdToXrpRate).toFixed(xrpPrecision)
-  const dropDestinationAmount = XrpUtils.xrpToDrops(xrpDestinationAmount)
 
   // Submit payment
-  const txHash = await xrpClient.send(
-    dropDestinationAmount,
-    destinationXAddress,
+  const txResult = await issuedCurrencyClient.sendIssuedCurrencyPayment(
     senderWallet,
-  )
+    destinationXAddress, {currency: 'MGS', issuer: 'rHP4bHzghBdzskqcaPciL5WRGkHosB5zYx', value: mgsAmount.toString()}
+  );
 
-  return txHash
+  return txResult.hash;
 }
 
 /**
@@ -198,7 +223,6 @@ export async function checkPayment(
  * @param txOutputSchema - The output schema.
  * @param senderWallet - The sender wallet.
  * @param xrpClient - The XRP network client.
- * @param usdToXrpRate - The price of XRP in USD.
  * @param numRetries - The amount of times to retry a pending payment.
  */
 // eslint-disable-next-line max-params -- Keep regular parameters for a simpler type signature.
@@ -208,7 +232,7 @@ export async function reliableBatchPayment(
   txOutputSchema: z.Schema<TxOutput>,
   senderWallet: Wallet,
   xrpClient: XrpClient,
-  usdToXrpRate: number,
+  issuedCurrencyClient: IssuedCurrencyClient,
   numRetries: number,
 ): Promise<void> {
   for (const [index, txInput] of txInputs.entries()) {
@@ -220,19 +244,15 @@ export async function reliableBatchPayment(
     log.info(black(`  -> Name: ${txInput.name}`))
     log.info(black(`  -> Receiver classic address: ${txInput.address}`))
     log.info(black(`  -> Destination tag: ${txInput.destinationTag ?? 'null'}`))
-    const xrpPrecision = 6
     log.info(
       black(
-        `  -> Amount: ${(txInput.usdAmount / usdToXrpRate).toFixed(
-          xrpPrecision,
-        )} XRP valued at $${txInput.usdAmount}`,
+        `  -> Amount: ${txInput.mgsAmount} MGS.`,
       ),
     )
     const txHash = await submitPayment(
       senderWallet,
-      xrpClient,
-      txInput,
-      usdToXrpRate,
+      issuedCurrencyClient,
+      txInput
     )
     log.info('Submitted payment transaction.')
     log.info(black(`  -> Tx hash: ${txHash}`))
@@ -247,8 +267,7 @@ export async function reliableBatchPayment(
     // Transform transaction input to output
     const txOutput = {
       ...txInput,
-      transactionHash: txHash,
-      usdToXrpRate,
+      transactionHash: txHash
     }
 
     // Write transaction output to CSV, only use headers on first input

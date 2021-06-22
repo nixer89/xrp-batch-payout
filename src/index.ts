@@ -1,7 +1,14 @@
-// Re-exports from a single file
-export * as config from './lib/config'
-export * as io from './lib/io'
-export { default as log } from './lib/log'
-export * as schemas from './lib/schema'
-export * as xrp from './lib/xrp'
-export { default as payout } from './apps/payout'
+//run as nodejs
+import payout from './apps/payout';
+import * as config from './lib/config';
+import * as chokidar from 'chokidar'
+
+function watchInputFile() {
+    let watcher = chokidar.watch(config.INPUT_CSV_FILE);
+
+    watcher.on('change', () => {
+        payout();
+    })
+}
+
+watchInputFile();

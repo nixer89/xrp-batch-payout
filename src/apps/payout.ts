@@ -2,22 +2,19 @@
 script or an 'app', so we moved all of the logging to here, which makes this
 function long, but not particularly complex. */
 // XRP payout script
-import fs from 'fs'
-
-import { ZodError } from 'zod'
-
-import { questions, retryLimit } from '../lib/config'
-import { parseFromCsvToArray, parseFromPromptToObject } from '../lib/io'
-import log, { green, black, red } from '../lib/log'
+import fs from 'fs';
+import { ZodError } from 'zod';
+import * as config from '../lib/config';
+import { parseFromCsvToArray } from '../lib/io';
+import log, { green, black, red } from '../lib/log';
 import {
   TxInput,
   txInputSchema,
-  senderInputSchema,
-  SenderInput,
   txOutputSchema,
 } from '../lib/schema'
 import {
   connectToLedger,
+  connectToLedgerToken,
   generateWallet,
   reliableBatchPayment,
 } from '../lib/xrp'
@@ -28,14 +25,18 @@ import {
  * @param override - Override prompt inputs. Useful for testing and debugging.
  * @throws Re-throws error after logging.
  */
-export default async function payout(override?: unknown): Promise<void> {
+export default async function payout(): Promise<void> {
   try {
     // Prompt user to configure XRP payout and validate user input
-    const senderInput = await parseFromPromptToObject<SenderInput>(
-      questions,
-      senderInputSchema,
-      override,
-    )
+    const senderInput = {
+      inputCsv: config.INPUT_CSV_FILE,
+      outputCsv: config.OUTPUT_CSV_FILE,
+      network: config.XRPL_NETWORK,
+      grpcUrl: config.GPRC_URL,
+      maxFee: 0.000012,
+      secret: config.XRPL_SECRET,
+      confirmed: true
+    }
 
     // Cancel if user did not confirm payout
     if (!senderInput.confirmed) {
@@ -79,6 +80,19 @@ export default async function payout(override?: unknown): Promise<void> {
     )
     log.info(black(`  -> ${classicAddress} balance: ${balance} XRP`))
 
+    // Connect to XRPL Token endpoint
+    log.info('')
+    log.info(`Connecting to XRPL ${senderInput.network}..`)
+    const issuedCurrencyClient = await connectToLedgerToken(
+      senderInput.grpcUrl,
+      senderInput.network,
+      classicAddress,
+    )
+    log.info(green(`Connected to XRPL ${senderInput.network} Token endpoint.`))
+    log.info(
+      black(`  -> RippleD node web gRPC endpoint: ${senderInput.grpcUrl}`),
+    )
+
     // Reliably send XRP to accounts specified in transaction inputs
     const txOutputWriteStream = fs.createWriteStream(senderInput.outputCsv)
     await reliableBatchPayment(
@@ -87,8 +101,8 @@ export default async function payout(override?: unknown): Promise<void> {
       txOutputSchema,
       wallet,
       xrpNetworkClient,
-      senderInput.usdToXrpRate,
-      retryLimit,
+      issuedCurrencyClient,
+      config.retryLimit,
     )
 
     log.info('')
