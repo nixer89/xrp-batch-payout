@@ -19,7 +19,7 @@ import * as z from 'zod'
 
 import  * as config from './config'
 import { parseFromObjectToCsv } from './io'
-import log, { green, black } from './log'
+import log, { green, black, red } from './log'
 import { TxInput, TxOutput } from './schema'
 
 /**
@@ -170,6 +170,33 @@ export async function submitPayment(
   return txResult.hash;
 }
 
+export async function checkTrustLine(
+  issuedCurrencyClient: IssuedCurrencyClient,
+  receiverAccount: TxInput,
+): Promise<boolean> {
+  // Set up payment
+  const {
+    address: destinationClassicAddress,
+  } = receiverAccount
+
+  const destinationXAddress = XrpUtils.encodeXAddress(
+    destinationClassicAddress,
+    undefined,
+  ) as string
+
+  const issuerXAddress = XrpUtils.encodeXAddress(config.ISSUER_ADDRESS, 0) as string
+
+  let trustlines = await issuedCurrencyClient.getTrustLines(destinationXAddress, issuerXAddress);
+
+  for(let i = 0; i < trustlines.length; i++) {
+    if(trustlines[i].currency === config.CURRENCY_CODE) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /**
  * Check payment for success. Re-tries pending transactions until failure limit.
  * Throws an error on unresolved pending txs or tx failures.
@@ -254,36 +281,47 @@ export async function reliableBatchPayment(
         `  -> Amount: ${txInput.mgsAmount} MGS.`,
       ),
     )
-    const txHash = await submitPayment(
-      senderWallet,
-      issuedCurrencyClient,
-      txInput
-    )
-    log.info('Submitted payment transaction.')
-    log.info(black(`  -> Tx hash: ${txHash}`))
 
-    // Only continue if the payment was successful, otherwise throw an error
-    await checkPayment(xrpClient, txHash, numRetries)
-    log.info(
-      green('Transaction successfully validated. Your money has been sent.'),
-    )
-    log.info(black(`  -> Tx hash: ${txHash}`))
+    log.info('Checking existing trustline')
 
-    // Transform transaction input to output
-    const txOutput = {
-      ...txInput,
-      transactionHash: txHash
+    const trustlineExists = await checkTrustLine(issuedCurrencyClient, txInput);
+
+    if(trustlineExists) {
+      const txHash = await submitPayment(
+        senderWallet,
+        issuedCurrencyClient,
+        txInput
+      )
+      log.info('Submitted payment transaction.')
+      log.info(black(`  -> Tx hash: ${txHash}`))
+
+      // Only continue if the payment was successful, otherwise throw an error
+      await checkPayment(xrpClient, txHash, numRetries)
+      log.info(
+        green('Transaction successfully validated. Your money has been sent.'),
+      )
+      log.info(black(`  -> Tx hash: ${txHash}`))
+
+      // Transform transaction input to output
+      const txOutput = {
+        ...txInput,
+        transactionHash: txHash
+      }
+
+      // Write transaction output to CSV, only use headers on first input
+      const csvData = parseFromObjectToCsv(
+        txOutputWriteStream,
+        txOutputSchema,
+        txOutput,
+        index === 0,
+      )
+      log.info(`Wrote entry to ${txOutputWriteStream.path as string}.`)
+      log.debug(black(`  -> ${csvData}`))
+      log.info(green('Transaction successfully validated and recorded.'))
+
+    } else {
+      log.info(red(`No Trust Line for: ${txInput.address}`));
+      log.info(red(`No MGS tokens were sent to: ${txInput.address}`));
     }
-
-    // Write transaction output to CSV, only use headers on first input
-    const csvData = parseFromObjectToCsv(
-      txOutputWriteStream,
-      txOutputSchema,
-      txOutput,
-      index === 0,
-    )
-    log.info(`Wrote entry to ${txOutputWriteStream.path as string}.`)
-    log.debug(black(`  -> ${csvData}`))
-    log.info(green('Transaction successfully validated and recorded.'))
   }
 }
