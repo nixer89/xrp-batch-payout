@@ -184,7 +184,7 @@ export async function checkTrustLine(
     undefined,
   ) as string
 
-  const issuerXAddress = XrpUtils.encodeXAddress(config.ISSUER_ADDRESS, 0) as string
+  //const issuerXAddress = XrpUtils.encodeXAddress(config.ISSUER_ADDRESS, 0) as string
 
   // Submit payment
   log.info('')
@@ -194,7 +194,7 @@ export async function checkTrustLine(
   log.info(black(`  -> Destination: ${destinationClassicAddress}`))
   log.info(black(`  -> Receiver classic address: ${config.ISSUER_ADDRESS}`))
   
-  let trustlines:TrustLine[] = await issuedCurrencyClient.getTrustLines(destinationXAddress, issuerXAddress);
+  let trustlines:TrustLine[] = await issuedCurrencyClient.getTrustLines(destinationXAddress);
 
   let found:boolean = false;
 
