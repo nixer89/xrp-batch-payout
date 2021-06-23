@@ -28,6 +28,10 @@ export const OUTPUT_CSV_FILE = process.env.OUTPUT_CSV_FILE || './output.csv';
 export const XRPL_NETWORK = process.env.XRPL_NETWORK === 'mainnet' ? XrplNetwork.Main : XrplNetwork.Test || XrplNetwork.Test;
 
 //issuer properties
-export const ISSUER_ADDRESS = process.env.ISSUER_ADDRESS || 'rHP4bHzghBdzskqcaPciL5WRGkHosB5zYx';
-export const CURRENCY_CODE = process.env.CURRENCY_CODE || 'MGS';
+//export const ISSUER_ADDRESS = process.env.ISSUER_ADDRESS || 'rHP4bHzghBdzskqcaPciL5WRGkHosB5zYx'; // <--- real MGS!
+export const ISSUER_ADDRESS = process.env.ISSUER_ADDRESS || 'rHBPZ4bdh3ZS23g88ARDmbZj9T7QRBRiR6';
+
+//export const CURRENCY_CODE = process.env.CURRENCY_CODE || 'MGS';
+export const CURRENCY_CODE = process.env.CURRENCY_CODE || 'ABC';
+
 export const MGS_SENDER_SECRET = process.env.MGS_SENDER_SECRET || 'shTAjRHoxanFFx6TiPKEVJYVeXRqj';
