@@ -174,7 +174,7 @@ export async function checkTrustLine(
   issuedCurrencyClient: IssuedCurrencyClient,
   receiverAccount: TxInput,
 ): Promise<boolean> {
-  // Set up payment
+  //Set up trustline check
   const {
     address: destinationClassicAddress,
   } = receiverAccount
@@ -188,13 +188,18 @@ export async function checkTrustLine(
 
   let trustlines = await issuedCurrencyClient.getTrustLines(destinationXAddress, issuerXAddress);
 
+  let found:boolean = false;
+
   for(let i = 0; i < trustlines.length; i++) {
-    if(trustlines[i].currency === config.CURRENCY_CODE) {
-      return true;
+    log.info("Trustline: " + JSON.stringify(trustlines[i]));
+    
+    if(trustlines[i].currency == config.CURRENCY_CODE) {
+      found = true;
+      break;
     }
   }
 
-  return false;
+  return found;
 }
 
 /**
@@ -268,25 +273,26 @@ export async function reliableBatchPayment(
   numRetries: number,
 ): Promise<void> {
   for (const [index, txInput] of txInputs.entries()) {
-    // Submit payment
-    log.info('')
-    log.info(
-      `Submitting ${index + 1} / ${txInputs.length} payment transactions..`,
-    )
-    log.info(black(`  -> Name: ${txInput.name}`))
-    log.info(black(`  -> Receiver classic address: ${txInput.address}`))
-    log.info(black(`  -> Destination tag: ${txInput.destinationTag ?? 'null'}`))
-    log.info(
-      black(
-        `  -> Amount: ${txInput.mgsAmount} MGS.`,
-      ),
-    )
 
     log.info('Checking existing trustline')
 
     const trustlineExists = await checkTrustLine(issuedCurrencyClient, txInput);
 
     if(trustlineExists) {
+      // Submit payment
+      log.info('')
+      log.info(
+        `Submitting ${index + 1} / ${txInputs.length} payment transactions..`,
+      )
+      log.info(black(`  -> Name: ${txInput.name}`))
+      log.info(black(`  -> Receiver classic address: ${txInput.address}`))
+      log.info(black(`  -> Destination tag: ${txInput.destinationTag ?? 'null'}`))
+      log.info(
+        black(
+          `  -> Amount: ${txInput.mgsAmount} MGS.`,
+        ),
+      )
+
       const txHash = await submitPayment(
         senderWallet,
         issuedCurrencyClient,
