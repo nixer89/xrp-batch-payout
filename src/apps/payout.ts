@@ -34,9 +34,9 @@ export default async function payout(): Promise<void> {
       inputCsv: config.INPUT_CSV_FILE,
       outputCsv: config.OUTPUT_CSV_FILE,
       network: config.XRPL_NETWORK,
-      grpcUrl: config.GRPC_URL,
+      grpcUrl: 'mainnet' === config.XRPL_NETWORK ? config.WebGrpcEndpoint.Main : config.WebGrpcEndpoint.Test,
       maxFee: 0.000012,
-      secret: config.XRPL_SECRET,
+      secret: config.MGS_SENDER_SECRET,
       confirmed: true
     }
 
@@ -87,6 +87,7 @@ export default async function payout(): Promise<void> {
     log.info(`Connecting to XRPL ${senderInput.network}..`)
     const issuedCurrencyClient = await connectToLedgerToken(
       senderInput.grpcUrl,
+      'mainnet' === config.XRPL_NETWORK ? config.WSSEndpoint.Main : config.WSSEndpoint.Test,
       senderInput.network,
       classicAddress,
     )
@@ -104,13 +105,13 @@ export default async function payout(): Promise<void> {
       wallet,
       xrpNetworkClient,
       issuedCurrencyClient,
-      config.retryLimit,
+      parseInt(config.RETRY_LIMIT)
     )
 
     log.info('')
     log.info(
       green(
-        `Batch payout complete succeeded. Reliably sent ${txInputs.length} XRP payments.`,
+        `Batch payout complete succeeded. Reliably sent ${txInputs.length} MGS payments.`,
       ),
     )
   } catch (err) {

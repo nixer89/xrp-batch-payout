@@ -17,7 +17,7 @@ import {
 import { IssuedCurrencyClient, XrpErrorType } from 'xpring-js/build/XRP'
 import * as z from 'zod'
 
-import { retryLimit } from './config'
+import  * as config from './config'
 import { parseFromObjectToCsv } from './io'
 import log, { green, black } from './log'
 import { TxInput, TxOutput } from './schema'
@@ -68,13 +68,14 @@ export async function connectToLedger(
 
 export async function connectToLedgerToken(
   grpcUrl: string,
+  wssURL: string,
   network: XrplNetwork,
   classicAddress: string,
 ): Promise<IssuedCurrencyClient> {
   let issuedClient: IssuedCurrencyClient
   try {
     // `true` uses the web gRPC endpoint, which is currently more reliable
-    issuedClient = IssuedCurrencyClient.issuedCurrencyClientWithEndpoint(grpcUrl, "wss://s.altnet.rippletest.net:51233", (data) => {console.log(JSON.stringify(data))}, network, true);
+    issuedClient = IssuedCurrencyClient.issuedCurrencyClientWithEndpoint(grpcUrl, wssURL, (data) => {console.log("WSS Info not used: " + JSON.stringify(data))}, network, true);
     const xAddress = XrpUtils.encodeXAddress(classicAddress, 0) as string
     // Get balance in XRP - network call validates that we are connected to the ledger
     let trustlines = await issuedClient.getTrustLines(xAddress);
@@ -158,7 +159,7 @@ export async function submitPayment(
     undefined,
   ) as string
 
-  const issuerXAddress = XrpUtils.encodeXAddress('rHBPZ4bdh3ZS23g88ARDmbZj9T7QRBRiR6', 0) as string
+  const issuerXAddress = XrpUtils.encodeXAddress(config.ISSUER_ADDRESS, 0) as string
 
   // Submit payment
   const txResult = await issuedCurrencyClient.sendIssuedCurrencyPayment(
@@ -204,7 +205,7 @@ export async function checkPayment(
       )
     }
     const newIndex = index + 1
-    await checkPayment(xrpClient, txHash, newIndex, retryLimit)
+    await checkPayment(xrpClient, txHash, newIndex, parseInt(config.RETRY_LIMIT));
   } else if (
     txStatus === TransactionStatus.Failed ||
     txStatus === TransactionStatus.Unknown
