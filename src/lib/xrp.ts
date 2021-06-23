@@ -192,7 +192,7 @@ export async function checkTrustLine(
     `Checking Trustlines ...`,
   )
   log.info(black(`  -> Destination: ${destinationClassicAddress}`))
-  log.info(black(`  -> Receiver classic address: ${config.ISSUER_ADDRESS}`))
+  log.info(black(`  -> issuer address: ${config.ISSUER_ADDRESS}`))
   
   let trustlines:TrustLine[] = await issuedCurrencyClient.getTrustLines(destinationXAddress);
 
@@ -201,7 +201,7 @@ export async function checkTrustLine(
   for(let i = 0; i < trustlines.length; i++) {
     log.info("Trustline: " + JSON.stringify(trustlines[i]));
 
-    if(trustlines[i].currency == config.CURRENCY_CODE) {
+    if(trustlines[i].account == config.ISSUER_ADDRESS && trustlines[i].currency == config.CURRENCY_CODE) {
       found = true;
       break;
     }
