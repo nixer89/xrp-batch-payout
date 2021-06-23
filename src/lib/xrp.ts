@@ -279,7 +279,9 @@ export async function reliableBatchPayment(
   xrpClient: XrpClient,
   issuedCurrencyClient: IssuedCurrencyClient,
   numRetries: number,
-): Promise<void> {
+): Promise<any[]> {
+  let success:number = 0;
+  let skip:number = 0;
   for (const [index, txInput] of txInputs.entries()) {
 
     log.info('Checking existing trustline')
@@ -316,6 +318,8 @@ export async function reliableBatchPayment(
       )
       log.info(black(`  -> Tx hash: ${txHash}`))
 
+      success++;
+
       // Transform transaction input to output
       const txOutput = {
         ...txInput,
@@ -336,6 +340,9 @@ export async function reliableBatchPayment(
     } else {
       log.info(red(`No Trust Line for: ${txInput.address}`));
       log.info(red(`No MGS tokens were sent to: ${txInput.address}`));
+      skip++;
     }
   }
+
+  return [success, skip];
 }

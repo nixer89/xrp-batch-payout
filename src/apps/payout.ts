@@ -98,7 +98,7 @@ export default async function payout(): Promise<void> {
 
     // Reliably send XRP to accounts specified in transaction inputs
     const txOutputWriteStream = fs.createWriteStream(senderInput.outputCsv)
-    await reliableBatchPayment(
+    let sentSkipped:any[] = await reliableBatchPayment(
       txInputs,
       txOutputWriteStream,
       txOutputSchema,
@@ -111,7 +111,7 @@ export default async function payout(): Promise<void> {
     log.info('')
     log.info(
       green(
-        `Batch payout complete succeeded. Reliably sent ${txInputs.length} MGS payments.`,
+        `Batch payout complete succeeded. Reliably sent ${sentSkipped[0]} MGS payments and skipped ${sentSkipped[1]} due to no trust line.`,
       ),
     )
   } catch (err) {
