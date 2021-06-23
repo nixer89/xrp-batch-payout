@@ -74,7 +74,7 @@ export async function connectToLedgerToken(
   let issuedClient: IssuedCurrencyClient
   try {
     // `true` uses the web gRPC endpoint, which is currently more reliable
-    issuedClient = IssuedCurrencyClient.issuedCurrencyClientWithEndpoint(grpcUrl, "", (data) => {console.log(JSON.stringify(data))}, network, true);
+    issuedClient = IssuedCurrencyClient.issuedCurrencyClientWithEndpoint(grpcUrl, "wss://s.altnet.rippletest.net:51233", (data) => {console.log(JSON.stringify(data))}, network, true);
     // Get balance in XRP - network call validates that we are connected to the ledger
     let trustlines = await issuedClient.getTrustLines(classicAddress);
     console.log("trustline length: " + trustlines != null ? trustlines.length : -1);
