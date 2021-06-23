@@ -34,7 +34,7 @@ export default async function payout(): Promise<void> {
       inputCsv: config.INPUT_CSV_FILE,
       outputCsv: config.OUTPUT_CSV_FILE,
       network: config.XRPL_NETWORK,
-      grpcUrl: config.GPRC_URL,
+      grpcUrl: config.GRPC_URL,
       maxFee: 0.000012,
       secret: config.XRPL_SECRET,
       confirmed: true
