@@ -158,10 +158,12 @@ export async function submitPayment(
     undefined,
   ) as string
 
+  const issuerXAddress = XrpUtils.encodeXAddress('rHBPZ4bdh3ZS23g88ARDmbZj9T7QRBRiR6', 0) as string
+
   // Submit payment
   const txResult = await issuedCurrencyClient.sendIssuedCurrencyPayment(
     senderWallet,
-    destinationXAddress, {currency: 'ABC', issuer: 'rHBPZ4bdh3ZS23g88ARDmbZj9T7QRBRiR6', value: mgsAmount.toString()}
+    destinationXAddress, {currency: 'ABC', issuer: issuerXAddress, value: mgsAmount.toString()}
   );
 
   return txResult.hash;
