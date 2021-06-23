@@ -74,7 +74,7 @@ export async function connectToLedgerToken(
   let issuedClient: IssuedCurrencyClient
   try {
     // `true` uses the web gRPC endpoint, which is currently more reliable
-    issuedClient = IssuedCurrencyClient.issuedCurrencyClientWithEndpoint(grpcUrl, "", (data) => {console.log(JSON.stringify(data))}, network);
+    issuedClient = IssuedCurrencyClient.issuedCurrencyClientWithEndpoint(grpcUrl, "", (data) => {console.log(JSON.stringify(data))}, network, true);
     // Get balance in XRP - network call validates that we are connected to the ledger
     let trustlines = await issuedClient.getTrustLines(classicAddress);
     console.log("trustline length: " + trustlines != null ? trustlines.length : -1);
@@ -160,7 +160,7 @@ export async function submitPayment(
   // Submit payment
   const txResult = await issuedCurrencyClient.sendIssuedCurrencyPayment(
     senderWallet,
-    destinationXAddress, {currency: 'MGS', issuer: 'rHP4bHzghBdzskqcaPciL5WRGkHosB5zYx', value: mgsAmount.toString()}
+    destinationXAddress, {currency: 'ABC', issuer: 'rHBPZ4bdh3ZS23g88ARDmbZj9T7QRBRiR6', value: mgsAmount.toString()}
   );
 
   return txResult.hash;
