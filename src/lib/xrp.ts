@@ -14,7 +14,7 @@ import {
   Wallet,
   TransactionStatus,
 } from 'xpring-js'
-import { IssuedCurrencyClient, XrpErrorType } from 'xpring-js/build/XRP'
+import { IssuedCurrencyClient, TrustLine, XrpErrorType } from 'xpring-js/build/XRP'
 import * as z from 'zod'
 
 import  * as config from './config'
@@ -186,13 +186,21 @@ export async function checkTrustLine(
 
   const issuerXAddress = XrpUtils.encodeXAddress(config.ISSUER_ADDRESS, 0) as string
 
-  let trustlines = await issuedCurrencyClient.getTrustLines(destinationXAddress, issuerXAddress);
+  // Submit payment
+  log.info('')
+  log.info(
+    `Checking Trustlines ...`,
+  )
+  log.info(black(`  -> Destination: ${destinationClassicAddress}`))
+  log.info(black(`  -> Receiver classic address: ${config.ISSUER_ADDRESS}`))
+  
+  let trustlines:TrustLine[] = await issuedCurrencyClient.getTrustLines(destinationXAddress, issuerXAddress);
 
   let found:boolean = false;
 
   for(let i = 0; i < trustlines.length; i++) {
     log.info("Trustline: " + JSON.stringify(trustlines[i]));
-    
+
     if(trustlines[i].currency == config.CURRENCY_CODE) {
       found = true;
       break;
