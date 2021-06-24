@@ -240,18 +240,14 @@ export async function checkPayment(
   }
   if (txStatus === TransactionStatus.Pending) {
     if (index + 1 >= numRetries) {
-      throw Error(
-        `Retry limit of ${numRetries} reached. Transaction still pending.`,
-      )
+      log.error(red(`ERROR: Retry limit of ${numRetries} reached. Transaction still pending.`));
     }
     const newIndex = index + 1
     await checkPayment(xrpClient, txHash, newIndex, parseInt(config.RETRY_LIMIT));
-  } else if (
-    txStatus === TransactionStatus.Failed ||
-    txStatus === TransactionStatus.Unknown
-  ) {
-    throw Error('Transaction failed.')
+  } else {
+    log.error(red("ERROR: Sending MGS failed for transaction hash: " + txHash));
   }
+  
 
   return false
 }
