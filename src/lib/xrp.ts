@@ -164,7 +164,7 @@ export async function submitPayment(
   // Submit payment
   const txResult = await issuedCurrencyClient.sendIssuedCurrencyPayment(
     senderWallet,
-    destinationXAddress, {currency: 'ABC', issuer: issuerXAddress, value: mgsAmount.toString()}
+    destinationXAddress, {currency: config.CURRENCY_CODE, issuer: issuerXAddress, value: mgsAmount.toString()}
   );
 
   return txResult.hash;
