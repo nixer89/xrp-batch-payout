@@ -13,11 +13,6 @@ function watchInputFile() {
 
     console.log("watching for file changes on " + config.INPUT_CSV_FILE);
 
-    watcher.on('add', () => {
-        console.log("received file change, will execute payout");
-        payout();
-    })
-
     watcher.on('change', () => {
         console.log("received file change, will execute payout");
         payout();
