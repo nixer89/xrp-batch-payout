@@ -14,7 +14,7 @@ import {
   Wallet,
   TransactionStatus,
 } from 'xpring-js'
-import { IssuedCurrencyClient, TrustLine, XrpErrorType } from 'xpring-js/build/XRP'
+import { IssuedCurrencyClient, TrustLine, XrpError, XrpErrorType } from 'xpring-js/build/XRP'
 import * as z from 'zod'
 
 import  * as config from './config'
@@ -50,11 +50,11 @@ export async function connectToLedger(
     )
   } catch (err) {
     // Rethrow xpring-js errors in favor of something more helpful
-    if (err.errorType === XrpErrorType.XAddressRequired) {
+    if (err instanceof XrpError && err.errorType === XrpErrorType.XAddressRequired) {
       throw Error(
         `Invalid classic address. Could not connect to XRPL ${network}.`,
       )
-    } else if (err.message === 'Http response at 400 or 500 level' || err.message === 'Unknown Content-type received.') {
+    } else if (err instanceof XrpError && (err.message === 'Http response at 400 or 500 level' || err.message === 'Unknown Content-type received.')) {
       throw Error(
         `Failed to connect ${grpcUrl}. Is the the right ${network} endpoint?`,
       )
@@ -83,11 +83,11 @@ export async function connectToLedgerToken(
 
   } catch (err) {
     // Rethrow xpring-js errors in favor of something more helpful
-    if (err.errorType === XrpErrorType.XAddressRequired) {
+    if (err instanceof XrpError && err.errorType === XrpErrorType.XAddressRequired) {
       throw Error(
         `Invalid classic address. Could not connect to XRPL ${network}.`,
       )
-    } else if (err.message === 'Http response at 400 or 500 level' || err.message === 'Unknown Content-type received.') {
+    } else if (err instanceof XrpError && (err.message === 'Http response at 400 or 500 level' || err.message === 'Unknown Content-type received.')) {
       throw Error(
         `Failed to connect ${grpcUrl}. Is the the right ${network} endpoint?`,
       )
@@ -280,63 +280,85 @@ export async function reliableBatchPayment(
   let skip:number = 0;
   for (const [index, txInput] of txInputs.entries()) {
 
-    log.info('Checking existing trustline')
+    try {
 
-    const trustlineExists = await checkTrustLine(issuedCurrencyClient, txInput);
+      const destinationXAddress = XrpUtils.encodeXAddress(
+        txInput.address,
+        undefined,
+      ) as string
 
-    if(trustlineExists) {
-      // Submit payment
-      log.info('')
-      log.info(
-        `Submitting ${index + 1} / ${txInputs.length} payment transactions..`,
-      )
-      log.info(black(`  -> Name: ${txInput.name}`))
-      log.info(black(`  -> Receiver classic address: ${txInput.address}`))
-      log.info(black(`  -> Destination tag: ${txInput.destinationTag ?? 'null'}`))
-      log.info(
-        black(
-          `  -> Amount: ${txInput.mgsAmount} MGS.`,
-        ),
-      )
+      log.info('Checking account exists')
 
-      const txHash = await submitPayment(
-        senderWallet,
-        issuedCurrencyClient,
-        txInput
-      )
-      log.info('Submitted payment transaction.')
-      log.info(black(`  -> Tx hash: ${txHash}`))
+      let accountExists = await xrpClient.accountExists(destinationXAddress);
 
-      // Only continue if the payment was successful, otherwise throw an error
-      await checkPayment(xrpClient, txHash, numRetries)
-      log.info(
-        green('Transaction successfully validated. Your money has been sent.'),
-      )
-      log.info(black(`  -> Tx hash: ${txHash}`))
+      if(accountExists) {
 
-      success++;
+        log.info('Checking existing trustline')
 
-      // Transform transaction input to output
-      const txOutput = {
-        ...txInput,
-        transactionHash: txHash
+        const trustlineExists = await checkTrustLine(issuedCurrencyClient, txInput);
+
+        if(trustlineExists) {
+          // Submit payment
+          log.info('')
+          log.info(
+            `Submitting ${index + 1} / ${txInputs.length} payment transactions..`,
+          )
+          log.info(black(`  -> Name: ${txInput.name}`))
+          log.info(black(`  -> Receiver classic address: ${txInput.address}`))
+          log.info(black(`  -> Destination tag: ${txInput.destinationTag ?? 'null'}`))
+          log.info(
+            black(
+              `  -> Amount: ${txInput.mgsAmount} MGS.`,
+            ),
+          )
+
+          const txHash = await submitPayment(
+            senderWallet,
+            issuedCurrencyClient,
+            txInput
+          )
+          log.info('Submitted payment transaction.')
+          log.info(black(`  -> Tx hash: ${txHash}`))
+
+          // Only continue if the payment was successful, otherwise throw an error
+          await checkPayment(xrpClient, txHash, numRetries)
+          log.info(
+            green('Transaction successfully validated. Your money has been sent.'),
+          )
+          log.info(black(`  -> Tx hash: ${txHash}`))
+
+          success++;
+
+          // Transform transaction input to output
+          const txOutput = {
+            ...txInput,
+            transactionHash: txHash
+          }
+
+          // Write transaction output to CSV, only use headers on first input
+          const csvData = parseFromObjectToCsv(
+            txOutputWriteStream,
+            txOutputSchema,
+            txOutput,
+            index === 0,
+          )
+          log.info(`Wrote entry to ${txOutputWriteStream.path as string}.`)
+          log.debug(black(`  -> ${csvData}`))
+          log.info(green('Transaction successfully validated and recorded.'))
+
+        } else {
+          log.info(red(`No Trust Line for: ${txInput.address}`));
+          log.info(red(`No MGS tokens were sent to: ${txInput.address}`));
+          skip++;
+        } 
+      } else {
+          log.info(red(`Account does not exist: ${txInput.address}`));
+          log.info(red(`No MGS tokens were sent to: ${txInput.address}`));
+          skip++;
       }
-
-      // Write transaction output to CSV, only use headers on first input
-      const csvData = parseFromObjectToCsv(
-        txOutputWriteStream,
-        txOutputSchema,
-        txOutput,
-        index === 0,
-      )
-      log.info(`Wrote entry to ${txOutputWriteStream.path as string}.`)
-      log.debug(black(`  -> ${csvData}`))
-      log.info(green('Transaction successfully validated and recorded.'))
-
-    } else {
-      log.info(red(`No Trust Line for: ${txInput.address}`));
-      log.info(red(`No MGS tokens were sent to: ${txInput.address}`));
-      skip++;
+    } catch(err) {
+      log.info(red("ERROR HAPPENED:"));
+      console.log(JSON.stringify(err));
     }
   }
 
