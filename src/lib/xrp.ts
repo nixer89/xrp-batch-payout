@@ -6,15 +6,8 @@
 // XRP logic - connect to XRPL and reliably send a payment
 import fs from 'fs'
 
-import { WalletFactory } from 'xpring-common-js'
-import {
-  XrpClient,
-  XrplNetwork,
-  XrpUtils,
-  Wallet,
-  TransactionStatus,
-} from 'xpring-js'
-import { IssuedCurrencyClient, TrustLine, XrpError, XrpErrorType } from 'xpring-js/build/XRP'
+import {AccountLinesRequest, AccountLinesResponse, Client, isValidAddress, Payment, TxResponse, Wallet } from 'xrpl'
+
 import * as z from 'zod'
 
 import  * as config from './config'
@@ -25,7 +18,7 @@ import { TxInput, TxOutput } from './schema'
 /**
  * Connect to the XRPL network.
  *
- * @param grpcUrl - The web gRPC endpoint of the rippleD node.
+ * @param wssUrl - The web gRPC endpoint of the rippleD node.
  * @param network - The XRPL network (devnet/testnet/mainnet).
  * @param classicAddress - The sender's XRP classic address.
  *
@@ -34,69 +27,33 @@ import { TxInput, TxOutput } from './schema'
  * balance.
  */
 export async function connectToLedger(
-  grpcUrl: string,
-  network: XrplNetwork,
+  wssUrl: string,
   classicAddress: string,
-): Promise<[XrpClient, number]> {
-  let xrpClient: XrpClient
-  let balance: number
+): Promise<[Client, number]> {
+  let xrpClient: Client
+  let balance: number = -1;
   try {
     // `true` uses the web gRPC endpoint, which is currently more reliable
-    xrpClient = new XrpClient(grpcUrl, network, true)
-    const xAddress = XrpUtils.encodeXAddress(classicAddress, 0) as string
+    xrpClient = new Client(wssUrl)
+    await xrpClient.connect();
+
+    if(xrpClient.isConnected())
+      console.log("XRPL is connected!")
     // Get balance in XRP - network call validates that we are connected to the ledger
-    balance = parseFloat(
-      XrpUtils.dropsToXrp((await xrpClient.getBalance(xAddress)).valueOf()),
-    )
-  } catch (err) {
-    // Rethrow xpring-js errors in favor of something more helpful
-    if (err instanceof XrpError && err.errorType === XrpErrorType.XAddressRequired) {
-      throw Error(
-        `Invalid classic address. Could not connect to XRPL ${network}.`,
-      )
-    } else if (err instanceof XrpError && (err.message === 'Http response at 400 or 500 level' || err.message === 'Unknown Content-type received.')) {
-      throw Error(
-        `Failed to connect ${grpcUrl}. Is the the right ${network} endpoint?`,
-      )
-    } else {
-      throw err
+    try {
+      balance = parseFloat(await xrpClient.getXrpBalance(classicAddress));
+    } catch(err) {
+      console.log(err);
     }
+
+    console.log("Account balance: " + balance)
+  } catch (err) {
+    throw Error(
+      `Failed to connect ${wssUrl}. Is the the right ${wssUrl} endpoint?`,
+    )
   }
 
   return [xrpClient, balance]
-}
-
-export async function connectToLedgerToken(
-  grpcUrl: string,
-  wssURL: string,
-  network: XrplNetwork,
-  classicAddress: string,
-): Promise<IssuedCurrencyClient> {
-  let issuedClient: IssuedCurrencyClient
-  try {
-    // `true` uses the web gRPC endpoint, which is currently more reliable
-    issuedClient = IssuedCurrencyClient.issuedCurrencyClientWithEndpoint(grpcUrl, wssURL, (data) => {console.log("WSS Info not used: " + JSON.stringify(data))}, network, true);
-    const xAddress = XrpUtils.encodeXAddress(classicAddress, 0) as string
-    // Get balance in XRP - network call validates that we are connected to the ledger
-    let trustlines = await issuedClient.getTrustLines(xAddress);
-    console.log("trustline length: " + trustlines != null ? trustlines.length : -1);
-
-  } catch (err) {
-    // Rethrow xpring-js errors in favor of something more helpful
-    if (err instanceof XrpError && err.errorType === XrpErrorType.XAddressRequired) {
-      throw Error(
-        `Invalid classic address. Could not connect to XRPL ${network}.`,
-      )
-    } else if (err instanceof XrpError && (err.message === 'Http response at 400 or 500 level' || err.message === 'Unknown Content-type received.')) {
-      throw Error(
-        `Failed to connect ${grpcUrl}. Is the the right ${network} endpoint?`,
-      )
-    } else {
-      throw err
-    }
-  }
-
-  return issuedClient;
 }
 
 /**
@@ -110,18 +67,18 @@ export async function connectToLedgerToken(
  */
 export function generateWallet(
   secret: string,
-  network: XrplNetwork,
 ): [Wallet, string] {
-  const wallet = new WalletFactory(network).walletFromSeed(secret)
+  const wallet = Wallet.fromSecret(secret);
   // Casting allowed because we validate afterwards
-  const xAddress = wallet?.getAddress() as string
-  const classicAddress = XrpUtils.decodeXAddress(xAddress)?.address as string
+
+  const classicAddress = wallet.classicAddress;
+
+  console.log("Wallet: " + JSON.stringify(wallet));
 
   // Validate wallet generated successfully
   if (
     !wallet ||
-    !XrpUtils.isValidXAddress(xAddress) ||
-    !XrpUtils.isValidClassicAddress(classicAddress)
+    !isValidAddress(wallet.classicAddress)
   ) {
     throw Error('Failed to generate wallet from secret.')
   }
@@ -145,44 +102,34 @@ export function generateWallet(
  */
 export async function submitPayment(
   senderWallet: Wallet,
-  issuedCurrencyClient: IssuedCurrencyClient,
+  xrplClient: Client,
   receiverAccount: TxInput,
-): Promise<string> {
-  // Set up payment
-  const {
-    address: destinationClassicAddress,
-    mgsAmount,
-  } = receiverAccount
+): Promise<TxResponse | null> {
 
-  const destinationXAddress = XrpUtils.encodeXAddress(
-    destinationClassicAddress,
-    undefined,
-  ) as string
+  try {
 
-  const issuerXAddress = XrpUtils.encodeXAddress(config.ISSUER_ADDRESS, 0) as string
-
-  // Submit payment
-  const txResult = await issuedCurrencyClient.sendIssuedCurrencyPayment(
-    senderWallet,
-    destinationXAddress, {currency: config.CURRENCY_CODE, issuer: issuerXAddress, value: mgsAmount.toString()}
-  );
-
-  return txResult.hash;
+    let payment:Payment = {
+      TransactionType: "Payment",
+      Account: senderWallet.classicAddress,
+      Destination: receiverAccount.address,
+      Amount: {
+        currency: config.CURRENCY_CODE,
+        issuer: config.ISSUER_ADDRESS,
+        value: receiverAccount.mgsAmount.toString()
+      }
+    }
+    // Submit payment
+    return xrplClient.submitAndWait(payment, { wallet: senderWallet});
+  } catch(err) {
+    console.log(err);
+    return null;
+  }
 }
 
 export async function checkTrustLine(
-  issuedCurrencyClient: IssuedCurrencyClient,
+  xrplClient: Client,
   receiverAccount: TxInput,
 ): Promise<boolean> {
-  //Set up trustline check
-  const {
-    address: destinationClassicAddress,
-  } = receiverAccount
-
-  const destinationXAddress = XrpUtils.encodeXAddress(
-    destinationClassicAddress,
-    undefined,
-  ) as string
 
   //const issuerXAddress = XrpUtils.encodeXAddress(config.ISSUER_ADDRESS, 0) as string
 
@@ -191,65 +138,46 @@ export async function checkTrustLine(
   log.info(
     `Checking Trustlines ...`,
   )
-  log.info(black(`  -> Destination: ${destinationClassicAddress}`))
+  log.info(black(`  -> Destination: ${receiverAccount.address}`))
   log.info(black(`  -> issuer address: ${config.ISSUER_ADDRESS}`))
   
-  let trustlines:TrustLine[] = await issuedCurrencyClient.getTrustLines(destinationXAddress);
+  let trustlineRequest:AccountLinesRequest = {
+    command: 'account_lines',
+    account: receiverAccount.address,
+    peer: config.ISSUER_ADDRESS
+  }
+
+  let trustlineResponse:AccountLinesResponse = await xrplClient.request(trustlineRequest);
 
   let found:boolean = false;
 
-  for(let i = 0; i < trustlines.length; i++) {
-    log.info("Trustline: " + JSON.stringify(trustlines[i]));
+  if(trustlineResponse?.result?.lines?.length > 0) {
+    let lines = trustlineResponse?.result?.lines;
+    for(let i = 0; i < lines.length; i++) {
+      log.info("Trustline: " + JSON.stringify(lines[i]));
 
-    if(trustlines[i].account == config.ISSUER_ADDRESS && trustlines[i].currency == config.CURRENCY_CODE) {
-      found = true;
-      break;
+      if(lines[i].account == config.ISSUER_ADDRESS && lines[i].currency == config.CURRENCY_CODE) {
+        let limit = parseFloat(lines[i].limit);
+        let balance = parseFloat(lines[i].balance);
+        let minLimit = balance + receiverAccount.mgsAmount;
+
+        console.log("limit: " + limit);
+        console.log("balance: " + balance);
+        console.log("minLimit: " + minLimit);
+        console.log("mgsAmount: "+ receiverAccount.mgsAmount);
+
+        if(limit > minLimit)
+        //limit is high enough to receive MGS!
+          found = true;
+        else
+          log.warn("Trustline limit too low to send " + receiverAccount.mgsAmount + " MGS: " + JSON.stringify(lines[i]));
+
+        break;
+      }
     }
   }
 
   return found;
-}
-
-/**
- * Check payment for success. Re-tries pending transactions until failure limit.
- * Throws an error on unresolved pending txs or tx failures.
- *
- * @param xrpClient - XRPL network client.
- * @param txHash - XRPL transaction hash.
- * @param numRetries - Number of times to retry on a pending tx. Defaults to 3.
- * @param index - Index for recursion, should stay at default of 0.
- *
- * @returns True on success. False should never be returned - this would
- * indicate that there has been a change to transactions statuses on XRPL.
- * @throws Error if transaction failed or is unknown.
- */
-export async function checkPayment(
-  xrpClient: XrpClient,
-  txHash: string,
-  numRetries: number,
-  index = 0,
-): Promise<boolean> {
-  log.info(
-    `Checking that tx has been validated.. (${
-      index + 1
-    } / ${numRetries} retries)`,
-  )
-  const txStatus = await xrpClient.getPaymentStatus(txHash)
-  if (txStatus === TransactionStatus.Succeeded) {
-    return true
-  }
-  if (txStatus === TransactionStatus.Pending) {
-    if (index + 1 >= numRetries) {
-      log.error(red(`ERROR: Retry limit of ${numRetries} reached. Transaction still pending.`));
-    }
-    const newIndex = index + 1
-    await checkPayment(xrpClient, txHash, newIndex, parseInt(config.RETRY_LIMIT));
-  } else {
-    log.error(red("ERROR: Sending MGS failed for transaction hash: " + txHash));
-  }
-  
-
-  return false
 }
 
 /**
@@ -272,95 +200,124 @@ export async function reliableBatchPayment(
   txOutputWriteStream: fs.WriteStream,
   txOutputSchema: z.Schema<TxOutput>,
   senderWallet: Wallet,
-  xrpClient: XrpClient,
-  issuedCurrencyClient: IssuedCurrencyClient,
-  numRetries: number,
+  xrpClient: Client,
+  successAccounts: string[]
 ): Promise<any[]> {
   let success:number = 0;
   let skip:number = 0;
+
+  fs.writeFileSync(config.FAILED_TRX_FILE, "address, reason, txhash\n");
+  
   for (const [index, txInput] of txInputs.entries()) {
 
     try {
+      if(!successAccounts.includes(txInput.address)) {
 
-      const destinationXAddress = XrpUtils.encodeXAddress(
-        txInput.address,
-        undefined,
-      ) as string
+        log.info('Checking account exists')
 
-      log.info('Checking account exists')
+        let accountExists = false;
+        
+        try {
+          let balance = await xrpClient.getXrpBalance(txInput.address);
+          accountExists = balance != null;
+        } catch(err) {
+          accountExists = false;
+        }
 
-      let accountExists = await xrpClient.accountExists(destinationXAddress);
+        if(accountExists) {
 
-      if(accountExists) {
+          log.info('Checking existing trustline')
 
-        log.info('Checking existing trustline')
+          const trustlineExists = await checkTrustLine(xrpClient, txInput);
 
-        const trustlineExists = await checkTrustLine(issuedCurrencyClient, txInput);
+          if(trustlineExists) {
+            // Submit payment
+            log.info('')
+            log.info(
+              `Submitting ${index + 1} / ${txInputs.length} payment transactions..`,
+            )
+            log.info(black(`  -> Name: ${txInput.name}`))
+            log.info(black(`  -> Receiver classic address: ${txInput.address}`))
+            log.info(black(`  -> Destination tag: ${txInput.destinationTag ?? 'null'}`))
+            log.info(
+              black(
+                `  -> Amount: ${txInput.mgsAmount} MGS.`,
+              ),
+            )
 
-        if(trustlineExists) {
-          // Submit payment
-          log.info('')
-          log.info(
-            `Submitting ${index + 1} / ${txInputs.length} payment transactions..`,
-          )
-          log.info(black(`  -> Name: ${txInput.name}`))
-          log.info(black(`  -> Receiver classic address: ${txInput.address}`))
-          log.info(black(`  -> Destination tag: ${txInput.destinationTag ?? 'null'}`))
-          log.info(
-            black(
-              `  -> Amount: ${txInput.mgsAmount} MGS.`,
-            ),
-          )
+            const txResposne = await submitPayment(
+              senderWallet,
+              xrpClient,
+              txInput
+            )
 
-          const txHash = await submitPayment(
-            senderWallet,
-            issuedCurrencyClient,
-            txInput
-          )
-          log.info('Submitted payment transaction.')
-          log.info(black(`  -> Tx hash: ${txHash}`))
+            if(txResposne && txResposne.result && txResposne.result.meta && typeof(txResposne.result.meta) === 'object' && txResposne.result.meta.TransactionResult === 'tesSUCCESS') {
+              log.info('Submitted payment transaction.')
+              log.info(black(`  -> Tx hash: ${txResposne.result.hash}`))
+    
+              log.info(
+                green('Transaction successfully validated. Your money has been sent.'),
+              )
+              log.info(black(`  -> Tx hash: ${txResposne.result.hash}`))
+    
+              success++;
+              successAccounts.push(txInput.address);
+    
+              // Transform transaction input to output
+              const txOutput = {
+                ...txInput,
+                transactionHash: txResposne.result.hash
+              }
+    
+              // Write transaction output to CSV, only use headers on first input
+              const csvData = parseFromObjectToCsv(
+                txOutputWriteStream,
+                txOutputSchema,
+                txOutput,
+                index === 0,
+              )
 
-          // Only continue if the payment was successful, otherwise throw an error
-          await checkPayment(xrpClient, txHash, numRetries)
-          log.info(
-            green('Transaction successfully validated. Your money has been sent.'),
-          )
-          log.info(black(`  -> Tx hash: ${txHash}`))
+              fs.writeFileSync(config.ALREADY_SENT_ACCOUNT_FILE, JSON.stringify({accounts: successAccounts}));
 
-          success++;
+              log.info(`Wrote entry to ${txOutputWriteStream.path as string}.`)
+              log.debug(black(`  -> ${csvData}`))
+              log.info(green('Transaction successfully validated and recorded.'))
+            } else {
 
-          // Transform transaction input to output
-          const txOutput = {
-            ...txInput,
-            transactionHash: txHash
-          }
+              log.info(red(`Transaction failed to: ${txInput.address}`));
+              if(txResposne)
+                console.log(JSON.stringify(txResposne));
 
-          // Write transaction output to CSV, only use headers on first input
-          const csvData = parseFromObjectToCsv(
-            txOutputWriteStream,
-            txOutputSchema,
-            txOutput,
-            index === 0,
-          )
-          log.info(`Wrote entry to ${txOutputWriteStream.path as string}.`)
-          log.debug(black(`  -> ${csvData}`))
-          log.info(green('Transaction successfully validated and recorded.'))
-
+                fs.appendFileSync(config.FAILED_TRX_FILE, txInput.address + ", TRANSACION FAILED, " + txResposne?.result?.hash+"\n")
+            }
+          } else {
+            log.info(red(`No Trust Line for: ${txInput.address}`));
+            log.info(red(`No MGS tokens were sent to: ${txInput.address}`));
+            skip++;
+            fs.appendFileSync(config.FAILED_TRX_FILE, txInput.address + ", NO TRUSTLINE\n")
+          } 
         } else {
-          log.info(red(`No Trust Line for: ${txInput.address}`));
-          log.info(red(`No MGS tokens were sent to: ${txInput.address}`));
-          skip++;
-        } 
+            log.info(red(`Account does not exist: ${txInput.address}`));
+            log.info(red(`No MGS tokens were sent to: ${txInput.address}`));
+            skip++;
+            fs.appendFileSync(config.FAILED_TRX_FILE, txInput.address + ", ACCOUNT DELETED\n")
+        }
       } else {
-          log.info(red(`Account does not exist: ${txInput.address}`));
-          log.info(red(`No MGS tokens were sent to: ${txInput.address}`));
-          skip++;
+        log.info(red(`Skipped: ${txInput.address} - already processed`));
       }
     } catch(err) {
       log.info(red("ERROR HAPPENED:"));
       console.log(JSON.stringify(err));
     }
   }
+
+  //tool finished
+  //write back new distributed accounts accounts file
+  let newDistributedAccounts = {
+    accounts: successAccounts
+  }
+
+  fs.writeFileSync(config.ALREADY_SENT_ACCOUNT_FILE, JSON.stringify(newDistributedAccounts));
 
   return [success, skip];
 }

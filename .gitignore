@@ -5,3 +5,5 @@ node_modules/
 *.code-workspace
 .nyc_output/
 .DS_Store
+
+test/
